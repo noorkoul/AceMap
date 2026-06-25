@@ -8,46 +8,75 @@ public class Scheduleengine {
         Map<LocalDate, String> schedule = new LinkedHashMap<>();
         long totalDays = ChronoUnit.DAYS.between(startDate, examDate);
         
-        if (totalDays <= 0) return schedule;
+        if (totalDays <= 0 || subjects.isEmpty()) return schedule;
 
+        // 🌟 Fix 1: Explicitly establish our boundaries
         LocalDate examEve = examDate.minusDays(1);
-        int revisionDays = (int) Math.round(totalDays * 0.20);
-        long studyDays = (totalDays - revisionDays) - 1; 
-
-        // Compute total system workload capacity based on each subject's unique weight and unit count
-        double totalWorkloadWeight = 0;
-        for (Subject sub : subjects) {
-            totalWorkloadWeight += (sub.getWeight() * sub.getUnitCount());
+        int revisionDays = 4; // Locked revision block
+        
+        // The study cutoff date is exactly 4 days before the actual exam start
+        LocalDate studyCutoffDate = examDate.minusDays(revisionDays);
+        long studyDays = ChronoUnit.DAYS.between(startDate, studyCutoffDate);
+        
+        // Fallback safety layer for ultra-short countdown crunches
+        if (studyDays <= 0) {
+            studyDays = 1;
+            studyCutoffDate = startDate.plusDays(1);
         }
 
-        LocalDate currentDay = startDate;
-
-        // Loop through each subject and sequentially map out its custom number of units
+        // 1. Flatten all units into our master task queue
+        List<String> masterTaskQueue = new ArrayList<>();
         for (Subject sub : subjects) {
-            int totalUnits = sub.getUnitCount();
-            
-            for (int unit = 1; unit <= totalUnits; unit++) {
-                // Calculate days this specific unit deserves
-                long daysForThisUnit = Math.round(((double) studyDays / totalWorkloadWeight) * sub.getWeight());
+            for (int unit = 1; unit <= sub.getUnitCount(); unit++) {
+                masterTaskQueue.add(sub.getName() + " -> Unit " + unit + " [" + sub.getDifficultyStr() + "]");
                 
-                if (daysForThisUnit == 0) daysForThisUnit = 1;
-
-                for (int i = 0; i < daysForThisUnit; i++) {
-                    if (currentDay.isBefore(examEve.minusDays(revisionDays))) {
-                        schedule.put(currentDay, "Study: " + sub.getName() + " -> Unit " + unit + " [" + sub.getDifficultyStr() + "]");
-                        currentDay = currentDay.plusDays(1);
-                    }
+                if (sub.getDifficultyStr().equalsIgnoreCase("Hard")) {
+                    masterTaskQueue.add(sub.getName() + " -> Unit " + unit + " (Deep Dive) [" + sub.getDifficultyStr() + "]");
                 }
             }
         }
 
-        while (currentDay.isBefore(examEve)) {
-            schedule.put(currentDay, "REVISION PHASE 🚀 (Comprehensive Review)");
-            currentDay = currentDay.plusDays(1);
+        int totalTasks = masterTaskQueue.size();
+        LocalDate currentDay = startDate;
+
+        // 2. Distribute tasks up until the study cutoff date boundary line
+        for (int i = 0; i < totalTasks; i++) {
+            String task = masterTaskQueue.get(i);
+            
+            if (currentDay.isBefore(studyCutoffDate)) {
+                if (schedule.containsKey(currentDay)) {
+                    String existingTasks = schedule.get(currentDay);
+                    schedule.put(currentDay, existingTasks + " & " + task);
+                } else {
+                    schedule.put(currentDay, "Study: " + task);
+                }
+                
+                // Perfectly spreads out the tasks across the core study window days
+                double tasksPerDay = (double) totalTasks / studyDays;
+                if (tasksPerDay <= 1.0 || (i + 1) % Math.ceil(tasksPerDay) == 0) {
+                    currentDay = currentDay.plusDays(1);
+                }
+            } else {
+                // Out of study days? Bundle any left-over tasks onto the final study day
+                LocalDate finalStudyDay = studyCutoffDate.minusDays(1);
+                if (finalStudyDay.isBefore(startDate)) finalStudyDay = startDate;
+                
+                String existing = schedule.getOrDefault(finalStudyDay, "Study: ");
+                schedule.put(finalStudyDay, existing + " & " + task);
+            }
         }
 
-        if (!subjects.isEmpty()) {
-            schedule.put(examEve, "🚨 EXAM EVE LOCK: Intensive review for " + subjects.get(0).getName());
+        // 🌟 Fix 2: Reset the pointer to the cutoff date to ensure exactly 4 days of review rows are printed
+        currentDay = studyCutoffDate;
+
+        // 3. Fill the exact 4-day block remaining up to the exam date
+        while (currentDay.isBefore(examDate)) {
+            if (currentDay.equals(examEve)) {
+                schedule.put(currentDay, "🚨 EXAM EVE LOCK: Intensive review for " + subjects.get(0).getName());
+            } else {
+                schedule.put(currentDay, "REVISION PHASE 🚀 (Comprehensive Review)");
+            }
+            currentDay = currentDay.plusDays(1);
         }
 
         return schedule;
