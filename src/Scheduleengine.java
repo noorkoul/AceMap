@@ -10,18 +10,12 @@ public class Scheduleengine {
         
         if (totalDays <= 0 || subjects.isEmpty()) return schedule;
 
-        // 🌟 Fix 1: Explicitly establish our boundaries
         LocalDate examEve = examDate.minusDays(1);
-        int revisionDays = 4; // Locked revision block
-        
-        // The study cutoff date is exactly 4 days before the actual exam start
+        int revisionDays = 4; 
         LocalDate studyCutoffDate = examDate.minusDays(revisionDays);
-        long studyDays = ChronoUnit.DAYS.between(startDate, studyCutoffDate);
         
-        // Fallback safety layer for ultra-short countdown crunches
-        if (studyDays <= 0) {
-            studyDays = 1;
-            studyCutoffDate = startDate.plusDays(1);
+        if (studyCutoffDate.isBefore(startDate)) {
+            studyCutoffDate = examEve;
         }
 
         // 1. Flatten all units into our master task queue
@@ -37,9 +31,12 @@ public class Scheduleengine {
         }
 
         int totalTasks = masterTaskQueue.size();
+        long totalStudyDaysAvailable = ChronoUnit.DAYS.between(startDate, studyCutoffDate);
+        if (totalStudyDaysAvailable <= 0) totalStudyDaysAvailable = 1;
+
         LocalDate currentDay = startDate;
 
-        // 2. Distribute tasks up until the study cutoff date boundary line
+        // 2. Distribute tasks sequentially across the timeline
         for (int i = 0; i < totalTasks; i++) {
             String task = masterTaskQueue.get(i);
             
@@ -51,13 +48,12 @@ public class Scheduleengine {
                     schedule.put(currentDay, "Study: " + task);
                 }
                 
-                // Perfectly spreads out the tasks across the core study window days
-                double tasksPerDay = (double) totalTasks / studyDays;
+                double tasksPerDay = (double) totalTasks / totalStudyDaysAvailable;
                 if (tasksPerDay <= 1.0 || (i + 1) % Math.ceil(tasksPerDay) == 0) {
                     currentDay = currentDay.plusDays(1);
                 }
             } else {
-                // Out of study days? Bundle any left-over tasks onto the final study day
+                // Compression safety fallback
                 LocalDate finalStudyDay = studyCutoffDate.minusDays(1);
                 if (finalStudyDay.isBefore(startDate)) finalStudyDay = startDate;
                 
@@ -66,17 +62,14 @@ public class Scheduleengine {
             }
         }
 
-        // 🌟 Fix 2: Reset the pointer to the cutoff date to ensure exactly 4 days of review rows are printed
-        currentDay = studyCutoffDate;
-
-        // 3. Fill the exact 4-day block remaining up to the exam date
+        // 🌟 THE FIX: Seamlessly fill ANY unassigned intermediate dates up until the exam day
         while (currentDay.isBefore(examDate)) {
             if (currentDay.equals(examEve)) {
                 schedule.put(currentDay, "🚨 EXAM EVE LOCK: Intensive review for " + subjects.get(0).getName());
             } else {
                 schedule.put(currentDay, "REVISION PHASE 🚀 (Comprehensive Review)");
             }
-            currentDay = currentDay.plusDays(1);
+            currentDay = currentDay.plusDays(1); // Safely advances day-by-day without skipping!
         }
 
         return schedule;
